@@ -1,5 +1,5 @@
 /*!
- * KNMK-0002A Cirduino向けソースコード 1.0
+ * KNMK-0002A Cirduino向けソースコード 1.1
  * Copyright (c) 2022 Mizuhasi Yukkie
  * This software is released under the MIT license.
  * see https://opensource.org/licenses/MIT
@@ -21,28 +21,30 @@
  * 
  * 既知の基板上のエラー：HWB端子をプルダウンするのを忘れてしまいました。放っておいても基本的にロー状態なので無害ですが、
  * もし書き込み後に裏面LEDが高速点滅して言うことを聞かない……などが起きた場合は10kΩでGndに落とすと安定するかもしれません。
+ * 
+ * 1.1：電源を入れてすぐにお胸タッチをするとLED3のみ脈動しないのを修正。その他コードを少しだけ見やすく編集
  */
 
 #include <ADCTouch.h>
 #include <Adafruit_NeoPixel.h>
 
-#define LED_B1 0 // LEDのIDをわかりやすく名前に変換
-#define LED_L1 1
-#define LED_L2 2
-#define LED_L3 3
-#define LED_R1 4
-#define LED_R2 5
-#define LED_R3 6
-#define RGBLED_NUM 7 // How many LEDs
-#define RGBLED_PIN 6 // NeoPixel pin
-#define BLINK_LED 13 // Normal LED pin
+#define LED0 13  // 通常の単色LED
+#define LED1 0   // 基板上の表示に対応
+#define LED2 1
+#define LED3 2
+#define LED4 3
+#define LED5 4
+#define LED6 5
+#define LED7 6
+#define RGBLED_NUM 7 // RGBLEDの数
+#define RGBLED_PIN 6 // NeoPixel接続ピン
 
-#define KAMI 0
-#define MUNE 1
+#define KAMI  0   //タッチ判別ID
+#define MUNE  1
 #define SKIRT 2
 
-#define KAMI_P A1 //タッチセンシングのポート設定
-#define MUNE_P A0
+#define KAMI_P  A1 //タッチセンシングのポート設定（基板により違うので注意）
+#define MUNE_P  A0
 #define SKIRT_P A2
 
 Adafruit_NeoPixel pixels(RGBLED_NUM, RGBLED_PIN, NEO_GRB + NEO_KHZ800);
@@ -51,22 +53,21 @@ uint8_t BRT_LEVEL=1;//明るさ段階レベル0-3　起動時は1から開始
 uint8_t BRT_VAL[]={3,10,20,30};//明るさ段階に応じた明るさ詳細値　お好みで変更を。
 uint8_t BRT_RND[]={40,65,165,255};//ランダムでこの明るさに変更する（きらきら効果）段階ごとに設定
 
-uint8_t H_raw[7];//LEDごとの色環 0-255
-uint8_t S_raw[7];//LEDごとの彩度 0-255
-uint8_t V_raw[7];//LEDごとの明るさ 0-255
-
+uint8_t H_raw[RGBLED_NUM];//LEDごとの色環 0-255
+uint8_t S_raw[RGBLED_NUM];//LEDごとの彩度 0-255
+uint8_t V_raw[RGBLED_NUM];//LEDごとの明るさ 0-255
 uint8_t FuryGuage=0;//0-255 お胸を触り続けると溜まるゲージ
 
-int   T_offset[3];//タッチセンスの初期値
-bool  T_flag[3];  //タッチセンスフラグ
+int   T_offset[3];  //タッチセンスの初期値
+bool  T_flag[3];    //タッチセンスフラグ
 
-int PATTERN_MODE = 0;//点灯モード 0-2
+int PATTERN_MODE = 0;//点灯パターン 0-2
 
 
 void setup() {
-  pinMode(BLINK_LED, OUTPUT);
-  digitalWrite(BLINK_LED, LOW);//ON
-  Serial.begin(19200);
+  pinMode(LED0, OUTPUT);
+  digitalWrite(LED0, LOW);//ON
+//  Serial.begin(19200);
   pixels.begin();
 
   //タッチセンシングの初期値を登録
@@ -74,27 +75,24 @@ void setup() {
   T_offset[MUNE] = ADCTouch.read(MUNE_P, 500);
   T_offset[SKIRT] = ADCTouch.read(SKIRT_P, 500);
 
-  //０で初期化
+  //初期化
   for(int i=0;i<RGBLED_NUM;i++){
-    H_raw[i]=0;
+    H_raw[i]=100;
     S_raw[i]=0;
     V_raw[i]=0;
   }
-  digitalWrite(BLINK_LED, HIGH);//OFF
+  digitalWrite(LED0, HIGH);//OFF
 }
 
-int B_brt;//背面LEDの明るさ変数
 
 void loop() {
   static uint8_t cnt;//0-255
   cnt++;
 
-  B_brt=0;
-
     uint8_t H;//色環 0-255
     uint8_t S;//彩度
     uint8_t V;//輝度
-    const int SEL[]={LED_R3, LED_R2, LED_R1, LED_L1, LED_L2, LED_L3};//処理したいLEDの並び順
+    const int SEL[]={LED7, LED6, LED5, LED2, LED3, LED4};//処理したいLEDの並び順
 
     uint16_t H_tmp;
     uint16_t V_tmp;
@@ -151,18 +149,27 @@ void loop() {
       }
 
 
-      //お胸を触り続けるとゲージが溜まり色環がシフトする
+      //色環（H_tmp)計算　＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊
+      //上にてランダムに作った色を持ってくる
       H_tmp = H_raw[i];
-      if(PATTERN_MODE==2) H_tmp = H;      //ゲーミングモード（色環を高速で回す）
+      //ゲーミングモード時は色環を高速で回す
+      if(PATTERN_MODE==2) H_tmp = H;
+      //お胸を触り続けるとゲージが溜まり色環がシフトする
       H_tmp = min( H_tmp, (255-FuryGuage+7));//
 
-      //ゲージにより明るさ設定を無視して最大輝度になる
+
+      //明るさ（V_tmp)計算　＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊
+      //怒り時は強制的に最大輝度になる
       V_tmp = max( V_raw[i], FuryGuage);
       if(PATTERN_MODE==2)  V_tmp = max( BRT_RND[BRT_LEVEL], FuryGuage);//ゲーミングモード時は設定した明るさレベルに応じた値をここで読み込み
-      
-      //ゲージに応じて彩度増える
+
+
+      //彩度（S_tmp)計算　＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊
+      //上にてランダムに生成したS_rawを拾ってくる
       S_tmp = S_raw[i];
-      if(PATTERN_MODE==2)S_tmp = 255;//ゲーミングモード時には彩度マックス
+      //ゲーミングモード時には上の計算を無視してとにかく彩度MAX
+      if(PATTERN_MODE==2)S_tmp = 255;
+      //怒り時はゲージの値を優先して拾う →ゲージに応じて徐々に彩度MAXへ
       S_tmp = max( S_tmp,FuryGuage );
 
 
@@ -207,31 +214,30 @@ void loop() {
 
           pixels.clear();
           pixels.show();
-          digitalWrite(BLINK_LED, LOW);//ON
+          digitalWrite(LED0, LOW);//ON
             
           //明るさ確認コール
           for(int i=0;i<2;i++){
             if(BRT_LEVEL==0){
-              pixels.setPixelColor(LED_L3, pixels.ColorHSV(10000,225,20));
-//              pixels.setPixelColor(LED_R3, pixels.ColorHSV(15000,225,20));
+              pixels.setPixelColor(LED4, pixels.ColorHSV(10000,225,20));
             }
             if(BRT_LEVEL==1){
-              pixels.setPixelColor(LED_L3, pixels.ColorHSV(10000,225,20));
-              pixels.setPixelColor(LED_R3, pixels.ColorHSV(10000,225,20));
+              pixels.setPixelColor(LED4, pixels.ColorHSV(10000,225,20));
+              pixels.setPixelColor(LED7, pixels.ColorHSV(10000,225,20));
             }
             if(BRT_LEVEL==2){
-              pixels.setPixelColor(LED_L3, pixels.ColorHSV(10000,205,40));
-              pixels.setPixelColor(LED_L2, pixels.ColorHSV(10000,205,40));
-              pixels.setPixelColor(LED_R3, pixels.ColorHSV(10000,205,40));
-              pixels.setPixelColor(LED_R2, pixels.ColorHSV(10000,205,40));
+              pixels.setPixelColor(LED4, pixels.ColorHSV(10000,205,40));
+              pixels.setPixelColor(LED3, pixels.ColorHSV(10000,205,40));
+              pixels.setPixelColor(LED7, pixels.ColorHSV(10000,205,40));
+              pixels.setPixelColor(LED6, pixels.ColorHSV(10000,205,40));
             }
             if(BRT_LEVEL==3){
-              pixels.setPixelColor(LED_L3, pixels.ColorHSV(10000,205,60));
-              pixels.setPixelColor(LED_L2, pixels.ColorHSV(10000,205,60));
-              pixels.setPixelColor(LED_L1, pixels.ColorHSV(10000,205,60));
-              pixels.setPixelColor(LED_R3, pixels.ColorHSV(10000,205,60));
-              pixels.setPixelColor(LED_R2, pixels.ColorHSV(10000,205,60));
-              pixels.setPixelColor(LED_R1, pixels.ColorHSV(10000,205,60));
+              pixels.setPixelColor(LED4, pixels.ColorHSV(10000,205,60));
+              pixels.setPixelColor(LED3, pixels.ColorHSV(10000,205,60));
+              pixels.setPixelColor(LED2, pixels.ColorHSV(10000,205,60));
+              pixels.setPixelColor(LED7, pixels.ColorHSV(10000,205,60));
+              pixels.setPixelColor(LED6, pixels.ColorHSV(10000,205,60));
+              pixels.setPixelColor(LED5, pixels.ColorHSV(10000,205,60));
             }
             pixels.show();
             delay(100);
@@ -239,7 +245,7 @@ void loop() {
             pixels.show();
             delay(50);
           }
-          digitalWrite(BLINK_LED, HIGH);//OFF         
+          digitalWrite(LED0, HIGH);//OFF         
           //明るさ変更したら即反映
           for(int i=0;i<RGBLED_NUM;i++){
             V_raw[i]=BRT_VAL[BRT_LEVEL];
@@ -253,7 +259,7 @@ void loop() {
 
     //胸タッチ検出
     if(50 < T_sense1){
-      digitalWrite(BLINK_LED, LOW);//ON
+      digitalWrite(LED0, LOW);//ON
       if(254<FuryGuage){//怒りがマックスになったら脈動させる
         delay(200);
         FuryGuage=230;
@@ -262,7 +268,7 @@ void loop() {
       if((FuryGuage)<255) FuryGuage = FuryGuage + 1;
       T_flag[MUNE]=1;
     }else{
-      digitalWrite(BLINK_LED, HIGH);//OFF
+      digitalWrite(LED0, HIGH);//OFF
       if(0<(FuryGuage-6)) FuryGuage = FuryGuage - 6;
       if(0<FuryGuage) FuryGuage = FuryGuage - 1;
       T_flag[MUNE]=0;
