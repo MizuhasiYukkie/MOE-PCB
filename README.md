@@ -1,6 +1,7 @@
 # MOE-PCB
-Anime type pcb board
-Arduinoライブラリ化しました。
-Arduino Library(include samples)was move to link bellow.
+ここでは萌基板の参考資料を公開しています。
 
-サンプル含むソースコードは [こちら](https://github.com/MizuhasiYukkie/MoePCB)
+# MoePCB Arduino Library
+ライブラリ化しました。ソースコードはライブラリ内のサンプルとして公開する形に変更しました。Arduino Library(include samples) is now available in link bellow.
+
+ [MoePCB Arduino Library](https://github.com/MizuhasiYukkie/MoePCB)
